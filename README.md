@@ -43,8 +43,8 @@ The app includes the other build dependencies; GOG installer imports also need
 ## Games
 
 The testing labels below describe single-player gameplay testing coverage.
-Networking is currently unsupported across the toolkit. Each game's page lists the required
-release and preparation steps.
+Networking is unsupported across the toolkit, except online client play in Global Operations.
+Each game's page lists the required release and preparation steps.
 
 | Game | Status | Required version |
 | --- | --- | --- |
@@ -54,6 +54,20 @@ release and preparation steps.
 | [4x4 Evolution 2](games/4x4-evo2/README.md) | Playable (lightly tested) | PC 1.00.139 |
 | [Railroad Tycoon 3](games/railroad-tycoon-3/README.md) | Playable (well tested) | GOG 1.05 |
 | [Spore](games/spore/README.md) | Playable (lightly tested) | GOG Collection, Galactic Adventures 3.1.0.22 |
+| [Global Operations](games/global-ops/README.md) | Playable (lightly tested) | Europe disc with Community Update 4.0 |
+| [Grand Theft Auto 2](games/gta2/README.md) | Playable (lightly tested) | Rockstar Classics freeware release |
+
+Where the last two come from:
+
+- **Global Operations**: the Europe (En, Fr, De) disc, preserved as
+  [GlobalOperationsEuropeEnFrDe](https://archive.org/details/GlobalOperationsEuropeEnFrDe) on the
+  Internet Archive, plus the unofficial **Community Update 4.0**: `global_operations/patch/glopsus4_0.msi`
+  in the zip of the [Global Operations mod archive](https://archive.org/details/global-operations-mod-archive)
+  (SHA-256 `893bc916415bfc6cead62d9eb95a999d77993be5a86f0e7e272f9a866580c5ef`). Every official
+  executable is SafeDisc-protected; the 4.0 update's is not.
+- **Grand Theft Auto 2**: Rockstar's free 2004 release from the Rockstar Classics site
+  (`rockstargames.com/classics`, now closed), `GTA2INSTALLER.ZIP`
+  (SHA-256 `ba48216af4d2cf6dd2a6c66874c90a1ab21290382ade15f206e8ae47f1dc3ab7`).
 
 Performance is generally good, with occasional slowdowns still being worked on,
 mostly in Civilization IV and Spore. Game execution is currently single-threaded:
