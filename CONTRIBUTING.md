@@ -83,15 +83,19 @@ executables, Python extensions and libraries before the outer app.
 
 ## Add a game
 
-The translator targets 32-bit x86 Windows executables. To add a game, identify
-its executable, generate a code map, then build and work through any
-missing instruction, OS, graphics or audio support.
+The translator targets 32-bit x86 Windows executables. To add a game, choose a
+release, find every module it runs, generate code maps, then build and work
+through missing instruction, OS, graphics and audio support. The
+`.claude/skills/` folder holds the working method in more detail
+(`port-a-game`, `scripted-runs`, `debug-presentation`) with helper scripts.
 
 ### Identify the release
 
-Choose a release and record the executable's SHA-256, image base, entry point
-and data layout in `game.toml`. Add the identities of any DLLs that also need
-translation.
+Choose a release the translator can read. Copy protection that encrypts code
+(SafeDisc, SecuROM: `stxt` sections, `drvmgt.dll`) cannot be translated; when
+every official executable is protected, an unprotected community or freeware
+build is the target, and the game's README says so. Record the executable's
+SHA-256, image base, entry point and data layout in `game.toml`.
 
 A game directory contains:
 
@@ -99,12 +103,26 @@ A game directory contains:
 games/<id>/
   game.toml       identity, translator inputs, hooks and host settings
   metadata/       the code map: function spans, no instruction bytes
+  metadata-<key>/ one code map per auxiliary module
   native/         optional native replacements for translated functions
+  README.md       release, sources and checksums, preparation, status
+  DEVELOPMENT.md  images, bases, native replacements and settings
 ```
 
 Start from an existing game's configuration, replacing its identity, addresses
 and settings with those from your game. For a port outside the kit, pass its
 directory with `--game-dir`.
+
+### Find every module
+
+Static imports show only part of what runs. Games load renderers, sound and
+game logic by a name read from the registry or a config file (GTA2's
+`rendername`, LithTech's `object.lto`), so search the executable for `.dll`
+strings and `LoadLibrary` callers. Each translated DLL is a
+`[modules.aux.<key>]` entry with its SHA-256, base and size. Auxiliary bases
+must be at or above `0x10000000`, above the arena's shims, and must not overlap;
+raise `guest_size` to cover them. Rebase a DLL that prefers a lower address with
+its relocations before analysis (`.claude/skills/port-a-game/scripts/rebase_pe.py`).
 
 ### Generate a code map
 
@@ -134,24 +152,50 @@ modules have their own maps and configuration.
 
 ### Bring up the game
 
-Run setup and regenerate an app build using the commands above. Follow the
-reported diagnostics to add missing support, using the original disassembly and
-callers to understand the required behavior. Unsupported instructions generate
-named traps that remain fatal if reached.
+Run setup and regenerate a build using the commands above; a translator that
+overflows its stack needs `ulimit -s 65520` and `RUST_MIN_STACK=536870912`.
+Drive the game with the `smoke` target's input scripts rather than the app, and
+follow the first reported diagnostic each time, reading the original
+disassembly and callers to understand the required behavior. Unsupported
+instructions generate named traps that remain fatal if reached.
+
+Blockers that recur across ports:
+
+- Imports the runtime lacks. `import_gaps.py` in the `port-a-game` skill lists
+  candidates up front; an import fails only when it is called.
+- Version probes (the DirectX SDK's GetDXVersion) and helper programs the game
+  runs with `CreateProcessA` or `ShellExecuteA`: movie players, launchers,
+  settings programs, dedicated servers, self-relaunches. `[media]
+  bink_players`, `[environment] set` and native replacements cover these.
+- Flags whose meaning changed between SDK versions, and registry values the
+  game compares exactly. Read the call site before writing a shim or a default.
 
 Keep reusable support in the translator, runtime or platform adapters. Game
 addresses and settings go in `game.toml`; native replacements go in the game's
-`native/` directory. The [architecture](docs/architecture.md) explains guest
-memory and runtime boundaries, and the [code guide](docs/code-guide.md) maps
-behavior to source. [AGENTS.md](AGENTS.md) covers fidelity requirements and the
-workflow for native replacements.
+`native/` directory, each with a comment naming the address and a
+`DIVERGENCE(original):` line. Regenerate after changing code maps or
+replacements. The [architecture](docs/architecture.md) explains guest memory
+and runtime boundaries, and the [code guide](docs/code-guide.md) maps behavior
+to source. [AGENTS.md](AGENTS.md) covers fidelity requirements and the workflow
+for native replacements.
+
+### Check the picture
+
+A frame can be captured as the Direct3D target, as the surface handed to the
+presenter, and as the composed output (smoke `dump` and `dumpc`; the app's
+`RECOMP_HOST_DUMP_EVERY`). When the screen is wrong, find the first stage that
+differs from what the game draws, and compare consecutive frames for flicker.
+A game whose layers the Enhanced presentation misplaces can set
+`[render] classic = true`.
 
 ### Add desktop setup
 
 Add `[setup]` version and source guidance so the app can explain which copy to
 choose. Configure the installation layout, required modules and any installer
-recipes for that release. In the game's README, describe preparation steps,
-working features and known bugs.
+recipes for that release. Put first-run settings the original installer or
+launcher wrote in `[registry]`. In the game's README, describe where the release
+comes from with checksums, preparation steps, working features and known bugs,
+and add the game to the table in the main README.
 
 ## Observe indirect calls
 
