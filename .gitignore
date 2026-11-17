@@ -8,7 +8,8 @@
 /.tools/
 /.pytest_cache/
 /.omx/
-/.claude/
+/.claude/*
+!/.claude/skills/
 /.codex/
 CMakeUserPresets.json
 __pycache__/

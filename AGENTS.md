@@ -33,6 +33,23 @@ explains guest memory, threads and frames.
   `tools/format.py --write`; leave `third_party/` as vendored.
 - Never commit game files, generated code, binaries or logs.
 
+## Porting and debugging
+
+The skills in `.claude/skills/` hold the working method: `port-a-game` (release, modules, code
+maps, the bring-up loop, native replacement patterns), `scripted-runs` (driving a game with the
+smoke host and frame dumps) and `debug-presentation` (finding which stage of a frame is wrong).
+
+- Test with the smoke host, not by opening the app on the user's screen; the user may be playing
+  their own instance, so stop only processes you started.
+- Find the first wrong stage before changing code: compare the Direct3D target, the presented
+  surface and the composed output for the same frame, and consecutive frames for flicker.
+- Measure before theorising (call counts, seal reasons, lock callers), and revert experiments
+  that did not change the measurement.
+- Auxiliary modules load at or above `0x10000000`; rebase a DLL that prefers a lower address.
+- Old SDKs differ by version (Bink 1.0 flags, DirectX version probes); read the game's call site.
+- Registry defaults may need an exact form; read the comparison code before writing them.
+- Code maps or native replacements change the translation: rebuild with `--regenerate`.
+
 ## Translator cases
 
 `tools/test.py --translator [--case NAME]` assembles `tests/translator/cases/*.s` into a
