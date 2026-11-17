@@ -766,7 +766,11 @@ impl DeviceState {
     }
 
     /// What `GetTextureStageState` reports: the stored value, else D3D8's default.
-    pub fn texture_stage_state_or_default(&self, stage: u32, state: u32) -> Result<u32, RenderError> {
+    pub fn texture_stage_state_or_default(
+        &self,
+        stage: u32,
+        state: u32,
+    ) -> Result<u32, RenderError> {
         if stage as usize >= MAX_TEXTURE_STAGES {
             return Err(RenderError::new(
                 "d3d8::state::texture_stage_state_or_default",
@@ -774,14 +778,28 @@ impl DeviceState {
             ));
         }
         D3DTEXTURESTAGESTATETYPE::from_raw(state)?;
-        Ok(self.texture_stage_state(stage, state).unwrap_or(match state {
-            1 => if stage == 0 { 4 } else { 1 },
-            4 => if stage == 0 { 2 } else { 1 },
-            2 | 5 => 2,
-            11 => stage,
-            3 | 6 | 13 | 14 | 16 | 17 | 21 | 25 | 26 | 27 | 28 => 1,
-            _ => 0,
-        }))
+        Ok(self
+            .texture_stage_state(stage, state)
+            .unwrap_or(match state {
+                1 => {
+                    if stage == 0 {
+                        4
+                    } else {
+                        1
+                    }
+                }
+                4 => {
+                    if stage == 0 {
+                        2
+                    } else {
+                        1
+                    }
+                }
+                2 | 5 => 2,
+                11 => stage,
+                3 | 6 | 13 | 14 | 16 | 17 | 21 | 25 | 26 | 27 | 28 => 1,
+                _ => 0,
+            }))
     }
 
     /// The raw value of an unmodelled render state, or `None` when never set.
