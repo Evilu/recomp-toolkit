@@ -5,14 +5,17 @@ Rockstar Classics release of 2004. The intro movie, menus and gameplay work, wit
 controls and sound, at 640×480 on the Direct3D renderer.
 
 The menu's **Options** opens the separate GTA2 Manager program in the original; the port does
-not run it, so Options leaves you in the menu. Multiplayer (DirectPlay) is untested.
+not run it, so Options leaves you in the menu. Multiplayer is not available: the original starts
+it from GTA2 Manager, and the kit has no DirectPlay.
 
 Ctrl+Option+M releases mouse capture.
 
 ## The game files
 
-Rockstar distributed GTA2 for free as `GTA2INSTALLER.ZIP`, which holds an InstallShield 2K2
-installer (`GTA2.exe`). On Windows, run the installer and select the installed folder. On a Mac:
+Rockstar distributed GTA2 for free from its Rockstar Classics site (`rockstargames.com/classics`,
+now closed) as `GTA2INSTALLER.ZIP` (SHA-256
+`ba48216af4d2cf6dd2a6c66874c90a1ab21290382ade15f206e8ae47f1dc3ab7`), which holds an InstallShield
+2K2 installer (`GTA2.exe`). On Windows, run the installer and select the installed folder. On a Mac:
 
 1. Unzip `GTA2INSTALLER.ZIP`.
 2. The installer's files are stored, uncompressed, after its executable: each entry is a file

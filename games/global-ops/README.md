@@ -19,10 +19,12 @@ translated. The port targets Community Update 4.0, whose `Globalops.exe` is the 
 SafeDisc, extended with the update's own code. You need your own copy of the game on disc, plus the
 update:
 
-- **Disc:** Global Operations, Europe (En, Fr, De). Other releases are untested.
-- **Community Update 4.0:** `glopsus4_0.msi`, preserved in the
+- **Disc:** Global Operations, Europe (En, Fr, De), preserved as
+  [GlobalOperationsEuropeEnFrDe](https://archive.org/details/GlobalOperationsEuropeEnFrDe) on the
+  Internet Archive. Other releases are untested.
+- **Community Update 4.0:** `global_operations/patch/glopsus4_0.msi` inside the zip of the
   [Global Operations mod archive](https://archive.org/details/global-operations-mod-archive) on the
-  Internet Archive.
+  Internet Archive (SHA-256 `893bc916415bfc6cead62d9eb95a999d77993be5a86f0e7e272f9a866580c5ef`).
 
 On Windows, install from the disc and then run the update installer. On a Mac, build the same folder
 from the disc and the update (`brew install unshield msitools`):
