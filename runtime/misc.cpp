@@ -1148,7 +1148,7 @@ void a_RegDeleteKeyA(X86 *c) {
 void a_RegDeleteKeyW(X86 *c) {
     reg_delete_key(c, key_path(arg(c, 0), gm_wstr(arg(c, 1))));
 }
-void a_RegDeleteValueW(X86 *c) {
+static void reg_delete_value(X86 *c, const std::string &name) {
     std::string path = key_path(arg(c, 0), "");
     if (path.empty()) {
         set_eax(c, 6);
@@ -1159,12 +1159,18 @@ void a_RegDeleteValueW(X86 *c) {
         return;
     }
     auto it = regstore().find(path);
-    if (it == regstore().end() || !it->second.erase(gm_wstr(arg(c, 1)))) {
+    if (it == regstore().end() || !it->second.erase(name)) {
         set_eax(c, 2);
         return;
     }
     g_registry_dirty = true;
     set_eax(c, 0);
+}
+void a_RegDeleteValueW(X86 *c) {
+    reg_delete_value(c, arg(c, 1) ? gm_wstr(arg(c, 1)) : std::string());
+}
+void a_RegDeleteValueA(X86 *c) {
+    reg_delete_value(c, arg(c, 1) ? gm_str(arg(c, 1), 512) : std::string());
 }
 void a_RegFlushKey(X86 *c) {
     if (key_path(arg(c, 0), "").empty()) {
@@ -3616,6 +3622,7 @@ const ImportShim g_misc_shims[] = {
     {"ADVAPI32.dll", "RegDeleteKeyA", 2, a_RegDeleteKeyA},
     {"ADVAPI32.dll", "RegDeleteKeyW", 2, a_RegDeleteKeyW},
     {"ADVAPI32.dll", "RegDeleteValueW", 2, a_RegDeleteValueW},
+    {"ADVAPI32.dll", "RegDeleteValueA", 2, a_RegDeleteValueA},
     {"ADVAPI32.dll", "RegFlushKey", 1, a_RegFlushKey},
     // Thread tokens have no runtime equivalent; fail with the import named.
     {"ADVAPI32.dll", "OpenThreadToken", 4, imports_unsupported},

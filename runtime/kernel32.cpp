@@ -2355,6 +2355,10 @@ void k_CreateMutexA(X86 *c) {
     create_mutex_named(c, gm_str(arg(c, 2)));
 }
 
+void k_OpenMutexA(X86 *c) {
+    open_mutex_named(c, gm_str(arg(c, 2)));
+}
+
 // Gives up one level of ownership; at zero the mutex is free and a waiter can
 // take it. Releasing a mutex this thread does not own fails, as Windows does.
 void k_ReleaseMutex(X86 *c) {
@@ -6237,6 +6241,7 @@ const ImportShim g_kernel32_shims[] = {
     {"KERNEL32.dll", "CreateEventA", 4, k_CreateEventA},
     {"KERNEL32.dll", "ResetEvent", 1, k_ResetEvent},
     {"KERNEL32.dll", "CreateMutexA", 3, k_CreateMutexA},
+    {"KERNEL32.dll", "OpenMutexA", 3, k_OpenMutexA},
     {"KERNEL32.dll", "FindFirstChangeNotificationA", 3, k_FindFirstChangeNotificationA},
     {"KERNEL32.dll", "FindFirstChangeNotificationW", 3, k_FindFirstChangeNotificationW},
     {"KERNEL32.dll", "FindNextChangeNotification", 1, k_FindNextChangeNotification},
