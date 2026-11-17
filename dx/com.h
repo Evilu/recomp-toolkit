@@ -61,6 +61,7 @@ enum ComIface : uint16_t {
     IF_DDPALETTE,
     IF_DDCLIPPER,
     IF_DDCOLORCONTROL,
+    IF_DDGAMMACONTROL,
     IF_D3D,
     IF_D3D2,
     IF_D3D3,
@@ -488,6 +489,9 @@ struct ComObj {
     int32_t cc_sharpness = 5;
     int32_t cc_gamma = 1;
     int32_t cc_colorenable = 1;
+    // IDirectDrawGammaControl: red, green and blue ramps of 256 words; empty
+    // until set, which reads back as the identity ramp.
+    std::vector<uint16_t> gamma_ramp;
 
     // --- K_D3D7DEVICE / K_D3D7VB. The D3D7 device's state is behind a
     // pointer so the big render-state arrays are not paid for by every COM
