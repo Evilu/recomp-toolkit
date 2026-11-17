@@ -16,6 +16,8 @@
 #include <errno.h>
 #include <string.h>
 #include <iterator>
+#include <map>
+#include <vector>
 
 #ifdef RECOMP_HAVE_FFMPEG
 extern "C" {
@@ -69,8 +71,12 @@ uint32_t take_io_size(uint32_t flags) {
     return io_size;
 }
 
-bool check_open_flags(uint32_t flags) {
-    if (flags & BINK_FROM_MEMORY)
+// BINKFROMMEMORY arrived after Bink 1.0, whose BinkOpen ignores that bit, and
+// 1.0-era games set it with a file name. The argument decides: a pointer to
+// Bink data ("BIK") is a memory-resident video, anything else a file name.
+bool check_open_flags(uint32_t name, uint32_t flags) {
+    if ((flags & BINK_FROM_MEMORY) && name && gm_valid(name, 3) && rd8(name) == 'B' &&
+        rd8(name + 1) == 'I' && rd8(name + 2) == 'K')
         return video_error("memory-resident video is not supported");
     uint32_t ignored = flags & ~(BINK_FILE_HANDLE | BINK_FROM_MEMORY | BINK_IO_SIZE);
     if (ignored)
@@ -381,7 +387,7 @@ void BinkOpen(X86 *c) {
     set_eax(c, 0);
     g_error[0] = 0;
     uint32_t name = arg(c, 0), flags = arg(c, 1);
-    if (!check_open_flags(flags))
+    if (!check_open_flags(name, flags))
         return;
     uint32_t io_size = take_io_size(flags);
     auto p = std::make_unique<BinkPlayer>();
@@ -867,7 +873,7 @@ void BinkOpen(X86 *c) {
     set_eax(c, 0);
     g_error[0] = 0;
     uint32_t name = arg(c, 0), flags = arg(c, 1);
-    if (!check_open_flags(flags))
+    if (!check_open_flags(name, flags))
         return;
     take_io_size(flags);
     if ((flags & BINK_FILE_HANDLE) && !win32_file_handle_position(name, nullptr, nullptr)) {
@@ -1003,6 +1009,69 @@ void BinkSetIOSize(X86 *c) {
     LOGV("bink: I/O size %u", g_io_size);
 }
 
+// BinkBuffer: an off-screen 32-bit image the game decodes into and blits to its
+// window. The guest record follows the SDK's BINKBUFFER: Width, Height,
+// WindowWidth, WindowHeight, SurfaceType, Buffer, BufferPitch and the client
+// offset at +0x00..+0x20, which the game reads before BinkCopyToBuffer.
+constexpr uint32_t BINK_BUFFER_RECORD_BYTES = 0x100;
+std::map<uint32_t, uint32_t> g_buffers; // record -> pixels
+
+void BinkBufferOpen(X86 *c) {
+    set_eax(c, 0);
+    uint32_t width = arg(c, 1), height = arg(c, 2);
+    if (!width || !height || width > 4096 || height > 4096) {
+        video_error("invalid BinkBuffer size");
+        return;
+    }
+    uint32_t rec = heap_alloc(BINK_BUFFER_RECORD_BYTES, true, 16);
+    uint32_t pixels = rec ? heap_alloc(width * height * 4, true, 16) : 0;
+    if (!pixels) {
+        if (rec)
+            heap_free(rec);
+        video_error("cannot allocate BinkBuffer");
+        return;
+    }
+    wr32(rec + 0x00, width);
+    wr32(rec + 0x04, height);
+    wr32(rec + 0x08, width);
+    wr32(rec + 0x0c, height);
+    wr32(rec + 0x10, VIDEO_XRGB8888);
+    wr32(rec + 0x14, pixels);
+    wr32(rec + 0x18, width * 4);
+    g_buffers[rec] = pixels;
+    LOGV("bink: buffer %ux%u for window %08x -> %08x", width, height, arg(c, 0), rec);
+    set_eax(c, rec);
+}
+
+void BinkBufferLock(X86 *c) {
+    set_eax(c, g_buffers.count(arg(c, 0)) ? 1 : 0);
+}
+
+void BinkBufferBlit(X86 *c) {
+    uint32_t rec = arg(c, 0);
+    auto it = g_buffers.find(rec);
+    if (it != g_buffers.end()) {
+        uint32_t width = rd32(rec), height = rd32(rec + 4);
+        std::vector<uint32_t> argb((size_t)width * height);
+        memcpy(argb.data(), gm_ptr(it->second), argb.size() * 4);
+        for (uint32_t &px : argb)
+            px |= 0xff000000u;
+        host_display_present_window(argb.data(), (int)width, (int)height);
+    }
+    set_eax(c, 0);
+}
+
+void BinkBufferClose(X86 *c) {
+    uint32_t rec = arg(c, 0);
+    auto it = g_buffers.find(rec);
+    if (it != g_buffers.end()) {
+        heap_free(it->second);
+        heap_free(rec);
+        g_buffers.erase(it);
+    }
+    set_eax(c, 0);
+}
+
 #define BINK(name, bytes, fn) {"binkw32.dll", "_Bink" #name "@" #bytes, (bytes) / 4, fn}
 #define SMACK(name, bytes, fn) {"smackw32.dll", "_Smack" #name "@" #bytes, (bytes) / 4, fn}
 
@@ -1029,7 +1098,14 @@ const ImportShim g_video_shims[] = {
     BINK(Service, 4, BinkService),
     BINK(GetError, 0, BinkGetError),
     BINK(Close, 4, BinkClose),
-    BINK(BufferClose, 4, ret0),
+    BINK(BufferOpen, 16, BinkBufferOpen),
+    BINK(BufferSetDDPrimary, 4, ret1),
+    BINK(BufferLock, 4, BinkBufferLock),
+    BINK(BufferUnlock, 4, ret1),
+    BINK(BufferBlit, 12, BinkBufferBlit),
+    BINK(BufferSetOffset, 12, ret1),
+    BINK(BufferCheckWinPos, 12, ret0),
+    BINK(BufferClose, 4, BinkBufferClose),
     SMACK(Open, 12, ret0),
     SMACK(SoundUseMSS, 4, ret0),
     SMACK(DoFrame, 4, ret0),
@@ -1058,6 +1134,7 @@ void bink_reset() {
 #ifdef RECOMP_HAVE_FFMPEG
     g_players.clear();
 #endif
+    g_buffers.clear();
     // mem_init already discarded the old guest heap.
     g_io_size = 0;
     g_error_string = 0;

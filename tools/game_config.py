@@ -666,6 +666,8 @@ def load(game_dir, build_root=None):
         raise ValueError("%s: [fonts] files must be a list of nonempty paths" % source)
     if not isinstance(render.setdefault("d3d8_wgpu", False), bool):
         raise ValueError("%s: [render] d3d8_wgpu must be a boolean" % source)
+    if not isinstance(render.setdefault("classic", False), bool):
+        raise ValueError("%s: [render] classic must be a boolean" % source)
     if "d3d9_wgpu" in render:
         raise ValueError("%s: [render] d3d9_wgpu was removed; the Rust D3D9 renderer is always used" % source)
     if not isinstance(cfg.setdefault("network", {}).setdefault("sockets", False), bool):

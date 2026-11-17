@@ -993,11 +993,12 @@ void ail_digital_master_volume(X86 *c) {
 
 // AIL_set_sample_type(HSAMPLE, format, flags) describes raw PCM that
 // AIL_set_sample_address then points at: DIG_F_MONO_8, MONO_16, STEREO_8 or
-// STEREO_16, unsigned when 8-bit. ADPCM and the sign/order flags are not modelled.
+// STEREO_16, unsigned when 8-bit. DIG_PCM_SIGN (1) is what 16-bit PCM already
+// is; signed 8-bit, DIG_PCM_ORDER and ADPCM are not modelled.
 void ail_set_sample_type(X86 *c) {
     Sample *s = sample_for(arg(c, 0));
     uint32_t format = arg(c, 1), flags = arg(c, 2);
-    if (s && (format > 3 || flags)) {
+    if (s && (format > 3 || (flags & ~(format & 1 ? 1u : 0u)))) {
         LOGW("mss32: AIL_set_sample_type format %u flags %u is unsupported", format, flags);
         imports_unsupported(c);
         return;
@@ -1153,6 +1154,10 @@ struct StreamSource {
     bool failed() const {
         return wave && wav.failed();
     }
+    uint64_t total_frames() {
+        int64_t mp3_frames = wave ? 0 : mp3.duration_frames();
+        return wave ? wav.total_frames() : (uint64_t)std::max<int64_t>(mp3_frames, 0);
+    }
 };
 
 // Stream handles own the encoded image, decoder and shared host channel. A
@@ -1172,6 +1177,9 @@ struct Stream {
     int32_t channel = -1;
     uint32_t loops = 1, remaining = 1;
     uint64_t submitted = 0;
+    // Where the current play started in the track, and where the next start
+    // begins (AIL_set_stream_ms_position), in frames.
+    uint64_t base_frames = 0, start_frames = 0;
     StreamSource source;
     std::vector<int16_t> pending;
     size_t pending_pos = 0;
@@ -1521,7 +1529,9 @@ void stream_start(Stream &s) {
     s.playing = false;
     s.paused = false;
     s.pending.clear();
-    s.source.seek_frames(0);
+    s.source.seek_frames(s.start_frames);
+    s.base_frames = s.start_frames;
+    s.start_frames = 0;
     s.remaining = s.loops;
     s.generation = ++g_stream_generation;
     std::vector<int16_t> decoded;
@@ -2218,6 +2228,129 @@ void ret_done(X86 *c) {
     set_eax(c, SMP_DONE);
 }
 
+// AIL_delay(intervals) waits in 1/60-second units.
+void ail_delay(X86 *c) {
+    guest_sleep_ms(arg(c, 0) * 1000 / 60);
+    set_eax(c, 0);
+}
+
+// AIL_digital_handle_release/reacquire hand the wave device to another player
+// (a Bink movie) and take it back. Host playback shares the device, so both
+// succeed and voices keep their state.
+void ail_digital_handle_toggle(X86 *c) {
+    set_eax(c, 1);
+}
+
+// Miles 6's elliptical distances: front and back pairs. The mix models one
+// pair, so the front distances are used.
+void ail_set_3D_sample_float_distances(X86 *c) {
+    if (Sample *s = sample_for(arg(c, 0))) {
+        s->max_d = bits_to_float(arg(c, 1));
+        s->min_d = bits_to_float(arg(c, 2));
+        sample_apply_mix(*s);
+    }
+    set_eax(c, 0);
+}
+
+// AIL_set_3D_sample_info(H3DSAMPLE, const AILSOUNDINFO *): format, data,
+// length, rate, bits and channels of an image already in memory. PCM only.
+void ail_set_3D_sample_info(X86 *c) {
+    set_eax(c, 0);
+    Sample *s = sample_for(arg(c, 0));
+    uint32_t info = arg(c, 1);
+    if (!s || !info || !gm_valid(info, 24))
+        return;
+    uint32_t format = rd32(info), data = rd32(info + 4), bytes = rd32(info + 8);
+    uint32_t rate = rd32(info + 12), bits = rd32(info + 16), channels = rd32(info + 20);
+    if (format != 1 || (bits != 8 && bits != 16) || (channels != 1 && channels != 2) || !rate) {
+        LOGW("mss32: AIL_set_3D_sample_info format %u bits %u channels %u is unsupported", format,
+             bits, channels);
+        return;
+    }
+    sample_stop(*s);
+    s->decoded.clear();
+    bool ok = data && bytes && gm_valid(data, bytes);
+    s->wave.pcm = ok ? data : 0;
+    s->wave.pcm_bytes = ok ? bytes : 0;
+    s->wave.rate = rate;
+    s->wave.bits = (uint16_t)bits;
+    s->wave.channels = (uint16_t)channels;
+    set_eax(c, ok ? 1 : 0);
+}
+
+// AIL_set_sample_loop_block(HSAMPLE, start, end): loop a byte range of the
+// image; end -1 is the end. Looping the whole image is what the mix does; a
+// narrower range is not modelled and is logged.
+void ail_set_sample_loop_block(X86 *c) {
+    if (Sample *s = sample_for(arg(c, 0))) {
+        int32_t start = (int32_t)arg(c, 1), end = (int32_t)arg(c, 2);
+        if (start > 0 || (end >= 0 && (uint32_t)end < s->wave.pcm_bytes))
+            log_once("mss32.loop_block",
+                     "mss32: sample loop block %d..%d is not applied; the whole "
+                     "sample loops",
+                     start, end);
+    }
+    set_eax(c, 0);
+}
+
+void ail_set_stream_playback_rate(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_stream_mutex);
+    if (Stream *s = stream_for(arg(c, 0))) {
+        if (Sample *h = sample_for(s->sample))
+            h->rate = arg(c, 1);
+        if (s->channel >= 0 && arg(c, 1))
+            host_audio_set_frequency(s->channel, arg(c, 1));
+    }
+    set_eax(c, 0);
+}
+
+void ail_stream_playback_rate(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_stream_mutex);
+    Stream *s = stream_for(arg(c, 0));
+    Sample *h = s ? sample_for(s->sample) : nullptr;
+    set_eax(c, h && h->rate ? h->rate : s ? s->source.rate() : 0);
+}
+
+// AIL_stream_ms_position(HSTREAM, S32 *total_ms, S32 *current_ms): the track's
+// length and how far the host has played into it, wrapped for a looping stream.
+void ail_stream_ms_position(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_stream_mutex);
+    Stream *s = stream_for(arg(c, 0));
+    uint32_t total_p = arg(c, 1), current_p = arg(c, 2);
+    uint64_t total_ms = 0, current_ms = 0;
+    if (s && s->source.rate()) {
+        uint32_t rate = s->source.rate(), frame_bytes = s->source.channels() * 2;
+        uint64_t total = s->source.total_frames();
+        uint64_t played = s->playing || s->paused
+                              ? s->base_frames + host_audio_played_bytes(s->channel) / frame_bytes
+                              : s->start_frames;
+        if (total)
+            played %= total;
+        total_ms = total * 1000 / rate;
+        current_ms = played * 1000 / rate;
+    }
+    if (total_p && gm_valid(total_p, 4))
+        wr32(total_p, (uint32_t)total_ms);
+    if (current_p && gm_valid(current_p, 4))
+        wr32(current_p, (uint32_t)current_ms);
+    set_eax(c, 0);
+}
+
+// AIL_set_stream_ms_position(HSTREAM, S32 ms): a playing stream restarts there,
+// a stopped one starts there next.
+void ail_set_stream_ms_position(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_stream_mutex);
+    if (Stream *s = stream_for(arg(c, 0))) {
+        uint64_t frames =
+            (uint64_t)std::max<int32_t>((int32_t)arg(c, 1), 0) * s->source.rate() / 1000;
+        uint64_t total = s->source.total_frames();
+        s->start_frames = total ? std::min(frames, total) : frames;
+        if (s->playing)
+            stream_start(*s);
+    }
+    set_eax(c, 0);
+}
+
 #define AIL(name, bytes, fn) {"mss32.dll", "_AIL_" #name "@" #bytes, (bytes) / 4, fn}
 
 const ImportShim g_mss32_shims[] = {
@@ -2329,6 +2462,15 @@ const ImportShim g_mss32_shims[] = {
     AIL(register_3D_EOS_callback, 8, ail_register_3D_eos_callback),
     AIL(3D_update_position, 8, ret0),
     AIL(mem_use_malloc, 4, ail_mem_use_malloc),
+    AIL(delay, 4, ail_delay),
+    AIL(digital_handle_release, 4, ail_digital_handle_toggle),
+    AIL(digital_handle_reacquire, 4, ail_digital_handle_toggle),
+    AIL(set_3D_sample_float_distances, 20, ail_set_3D_sample_float_distances),
+    AIL(set_3D_sample_info, 8, ail_set_3D_sample_info),
+    AIL(set_sample_loop_block, 12, ail_set_sample_loop_block),
+    AIL(set_3D_sample_loop_block, 12, ail_set_sample_loop_block),
+    AIL(set_stream_playback_rate, 8, ail_set_stream_playback_rate),
+    AIL(stream_playback_rate, 4, ail_stream_playback_rate),
     AIL(mem_use_free, 4, ail_mem_use_free),
     AIL(close_digital_driver, 4, ail_close_digital_driver),
     AIL(get_DirectSound_info, 12, ail_get_dsound_info),
@@ -2355,9 +2497,9 @@ const ImportShim g_mss32_shims[] = {
     AIL(set_sample_3D_velocity_vector, 16, ail_set_sample_3D_velocity_vector),
     AIL(set_sample_position, 8, imports_unsupported),
     AIL(set_sample_reverb_levels, 12, ail_set_sample_reverb_levels),
-    AIL(set_stream_ms_position, 8, imports_unsupported),
+    AIL(set_stream_ms_position, 8, ail_set_stream_ms_position),
     AIL(stream_loop_count, 4, ail_stream_loop_count),
-    AIL(stream_ms_position, 12, imports_unsupported),
+    AIL(stream_ms_position, 12, ail_stream_ms_position),
     AIL(stream_sample_handle, 4, ail_stream_sample_handle),
 };
 

@@ -89,6 +89,7 @@ def render_header(cfg):
     lines.append("#define RECOMP_INPUT_CAPTURE_HIDDEN_CURSOR_ONLY %d"
                  % int(cfg["input"]["capture_hidden_cursor_only"]))
     lines.append("#define RECOMP_NETWORK_SOCKETS %d" % int(cfg["network"]["sockets"]))
+    lines.append("#define RECOMP_RENDER_CLASSIC %d" % int(cfg["render"]["classic"]))
     input_config = cfg["input"]
     lines.append("#define RECOMP_INPUT_KEYBOARD_NAMES %d" % (input_config["keyboard_names"] == "us"))
     lines.append("#define RECOMP_INPUT_MOUSE_SENSITIVITY %d" % input_config["mouse_sensitivity"])
