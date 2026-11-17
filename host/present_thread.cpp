@@ -495,6 +495,12 @@ struct Service : std::enable_shared_from_this<Service> {
             f->input.guest_h = guest_h;
         }
         f->input.ui = &f->ui;
+        // Classic shows the guest surface. A frame sealed without one (a
+        // second Flip with nothing drawn) has no picture; the last one stays.
+        if (f->input.classic && !f->staged_pixels && !fake) {
+            drop(f);
+            return;
+        }
         if (!f->target->scene.w || (!fake && !f->supplied && !f->target->pixels)) {
             drop(f);
             return;
